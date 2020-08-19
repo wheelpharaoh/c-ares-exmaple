@@ -1,0 +1,16 @@
+c-ares FQDN local error ARES_EBADNAME
+
+** update dns_resolvers `address` for 'dynamo-ue1' cluster in conf/envoy.yaml, to point to valid IP
+
+attempting to resolve an FQDN (dynamodb.us-east-1.amazonaws.com.) on a host where ndots < channel ndots generates 
+a c-ares local error (ARES_EBADNAME). 
+
+Envoy example:
+The envoy DNS implementation invokes ares_getaddrinfo(), which calls ares_query()->ares_create_query() under the hood and is where the logic bug occurs. 
+When creating the names for the query question, c-ares returns prematurely due to concatenating the FQDN (trailing dot) + dot + search path:
+
+e.g., dynamodb.us-east-1.amazonaws.com. => dynamodb.us-east-1.amazonaws.com..local.lan
+
+resulting in an ARES_EBADNAME local error, which envoy doesn't rectify.
+If channel (host) ndots are <= the ndots computed from the name in the question, (avoiding processing the search list altogether) then the lookup works, since as_is_first() is true.
+

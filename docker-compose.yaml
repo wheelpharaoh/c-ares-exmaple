@@ -1,0 +1,30 @@
+version: "3.7"  
+services:
+
+  service1:
+    build:  
+      context: .
+      dockerfile: Dockerfile.service
+    image: service1:latest
+    container_name: service1
+    volumes:
+      - ./conf/envoy.yaml:/etc/envoy.yaml
+    networks:
+      - envoymesh
+    environment:
+      - SERVICE_NAME=1
+    extra_hosts:
+      - "dynamodb.us-east-1.amazonaws.com:127.0.1.20"
+    expose:
+      - "13000"
+      - "8080"
+      - "8001"
+      - "443"
+    ports:
+      - "8000:13000"
+      - "8001:8001"
+      - "8080:8080"
+      - "443:443"
+
+networks:
+  envoymesh: {}

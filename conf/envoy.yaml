@@ -1,0 +1,121 @@
+admin:
+  access_log_path: "/dev/stdout"
+  address:
+    socket_address:
+      address: 0.0.0.0
+      port_value: 8001
+static_resources:
+  clusters:
+    - name: localsvc
+      type: STATIC
+      connect_timeout: 0.40s
+      lb_policy: LEAST_REQUEST
+      load_assignment:
+        cluster_name: localsvc
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: 127.0.0.1
+                      port_value: 8080
+    - name: dynamo-ue1
+      type: LOGICAL_DNS
+      connect_timeout: 0.40s
+      lb_policy: LEAST_REQUEST
+      dns_resolvers: 
+      - socket_address: 
+          address: 172.18.0.1
+          #address: 127.0.0.1
+          #port_value: 5353
+          port_value: 53
+      load_assignment:
+        cluster_name: dynamo-ue1
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: dynamodb.us-east-1.amazonaws.com.
+                      port_value: 443
+      transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+          sni: dynamodb.us-east-1.amazonaws.com
+          common_tls_context: 
+            validation_context:
+              match_subject_alt_names:
+              - exact: "dynamodb.us-east-1.amazonaws.com"
+              trusted_ca:
+                filename: /etc/ssl/certs/ca-certificates.crt
+  listeners:
+    - address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 13000
+      traffic_direction: INBOUND
+      filter_chains:
+        - filter_chain_match: {}
+          filters:
+            - name: envoy.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.config.filter.network.http_connection_manager.v2.HttpConnectionManager
+                stat_prefix: router
+                codec_type: AUTO
+                http_filters:
+                  - name: envoy.router
+                    config: {}
+                route_config:
+                  name: local_route
+                  virtual_hosts:
+                    - domains:
+                      - "*"
+                      name: localsvc
+                      routes:
+                      - match:
+                          prefix: /
+                        route:
+                          cluster: localsvc
+    - address:
+        socket_address:
+          address: 127.0.1.20
+          port_value: 443
+      drain_type: MODIFY_ONLY
+      traffic_direction: OUTBOUND
+      filter_chains:
+      - filter_chain_match: {}
+        filters:
+        - name: envoy.http_connection_manager
+          typed_config:
+            "@type": type.googleapis.com/envoy.config.filter.network.http_connection_manager.v2.HttpConnectionManager
+            stat_prefix: router
+            codec_type: AUTO
+            http_filters:
+            - name: envoy.http_dynamo_filter
+              config: {}
+            - name: envoy.router
+              config: {}
+            route_config:
+              name: dynamo-ue1
+              virtual_hosts:
+                - domains:
+                    - "*"
+                  name: dynamo-ue1
+                  routes:
+                  - match:
+                      prefix: /
+                    route:
+                      cluster: dynamo-ue1
+                      host_rewrite: dynamodb.us-east-1.amazonaws.com
+        transport_socket:
+          name: envoy.transport_sockets.tls
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+            common_tls_context:
+              tls_certificates:
+                - certificate_chain:
+                    filename: "/usr/local/share/ca-certificates/ddb_dynamodb.us-east-1.amazonaws.com.crt"
+                  private_key:
+                    filename: "/usr/local/share/ca-certificates/ddb_dynamodb.us-east-1.amazonaws.com.key"
+            require_client_certificate: true

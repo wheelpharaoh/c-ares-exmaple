@@ -1,0 +1,32 @@
+ARG COMMIT=50ef0945fa2c5da4bff7627c3abf41fdd3b7cffd
+FROM envoyproxy/envoy-dev:${COMMIT} AS envoyversion
+
+FROM envoyproxy/envoy-alpine-dev:latest
+
+RUN apk upgrade --update-cache --available && \
+    apk add openssl bash curl ca-certificates  && \
+    rm -rf /var/cache/apk/*
+
+RUN bash -c "openssl req \
+	-x509 \
+	-newkey rsa:4096 \
+	-sha256 \
+	-days 3650 \
+	-nodes \
+	-keyout /usr/local/share/ca-certificates/ddb_dynamodb.us-east-1.amazonaws.com.key \
+	-out /usr/local/share/ca-certificates/ddb_dynamodb.us-east-1.amazonaws.com.crt \
+	-subj /CN=dynamodb.us-east-1.amazonaws.com. \
+	-extensions san \
+	-config <( \
+	  echo '[req]'; \
+	  echo 'distinguished_name=req'; \
+	  echo '[san]'; \
+	  echo subjectAltName=DNS:localhost,DNS:dynamodb.us-east-1.amazonaws.com)"
+
+RUN update-ca-certificates
+
+COPY --from=envoyversion /usr/local/bin/envoy /usr/local/bin/envoy
+
+ADD ./bin/start_service.sh /usr/local/bin/start_service.sh
+RUN chmod u+x /usr/local/bin/start_service.sh
+ENTRYPOINT /usr/local/bin/start_service.sh
